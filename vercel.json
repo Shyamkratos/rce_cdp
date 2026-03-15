@@ -1,6 +1,6 @@
 {
-  "functions": {
-    "api/loot.js": { "maxDuration": 30 }
-  },
-  "rewrites": [{ "source": "/loot", "destination": "/api/loot" }]
+  "rewrites": [
+    { "source": "/loot", "destination": "/api/loot.js" },
+    { "source": "/genspark_rce.html", "destination": "/genspark_rce.html" }
+  ]
 }
