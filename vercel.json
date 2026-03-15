@@ -1,6 +1,0 @@
-{
-  "functions": {
-    "api/loot.js": { "maxDuration": 30 }
-  },
-  "rewrites": [{ "source": "/loot", "destination": "/api/loot" }]
-}
